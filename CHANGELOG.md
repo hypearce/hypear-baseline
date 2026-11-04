@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-pre.1] - 2026-11-04
+
 ### Added
 
 - Always-on standards: voice, problem-solving approach, coding standards, response format and versioning rules.
@@ -17,3 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `release` skill and `scripts/release.mjs`: releases from `main` only; updates the changelog and version declarations, pushes the release commit and creates the GitHub release.
 - `/review`, `/pr` and `/review-setup` commands.
 - Baseline ESLint, knip and dependency-cruiser configs for TypeScript projects.
+
+[unreleased]: https://github.com/hypearce/hypear-baseline/compare/v1.0.0-pre.1...HEAD
+[1.0.0-pre.1]: https://github.com/hypearce/hypear-baseline/releases/tag/v1.0.0-pre.1
