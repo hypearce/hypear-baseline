@@ -1,0 +1,14 @@
+{
+  "name": "hypear-baseline",
+  "owner": {
+    "name": "hypearce"
+  },
+  "plugins": [
+    {
+      "name": "hypear-baseline",
+      "source": "./",
+      "description": "Personal coding standards, problem-solving approach and review process."
+    }
+  ],
+  "description": "Personal Claude Code defaults by hypearce."
+}
