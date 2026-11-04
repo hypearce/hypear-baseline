@@ -1,7 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 // Always-on guidance, added to the system prompt in this order.
-const STANDARDS = ['voice.md', 'problem-solving.md', 'coding-standards.md', 'style.md']
+const STANDARDS = ['voice.md', 'problem-solving.md', 'coding-standards.md', 'versioning.md', 'style.md']
 
 let cached: string | undefined
 
@@ -22,6 +22,7 @@ async function loadStandards($: EngineInterface): Promise<string> {
       `- Plugin root: \`${root}\``,
       `- Deterministic review: \`node "${root}/scripts/review.mjs"\` (options: --base <ref>, --working, --full, --no-project, --json). Exit 0 = pass, 1 = blocking failures, 2 = could not run.`,
       '- Before any `git push`, follow the hypear-baseline pre-push skill. Before creating a pull request, follow the code-review skill (full review).',
+      `- Changelog and releases: \`node "${root}/scripts/changelog.mjs"\` and \`node "${root}/scripts/release.mjs"\`; follow the hypear-baseline changelog and release skills.`,
     ].join('\n'),
   ].join('\n\n')
   return cached

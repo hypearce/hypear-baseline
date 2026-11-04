@@ -158,7 +158,9 @@ hypear-baseline/
 │   └── reviewer-content.md
 ├── scripts/
 │   ├── review.mjs          # entry point: scope, checks, report
-│   ├── lib/                # git scope, project command discovery, process helpers
+│   ├── changelog.mjs       # changelog helper (changelog skill)
+│   ├── release.mjs         # release helper (release skill)
+│   ├── lib/                # git scope, project commands, changelog, versions, release, process helpers
 │   ├── checks/             # agnostic, electron, portability, shell, commits
 │   └── test/               # node --test suite
 ├── configs/typescript/     # ESLint, knip, dependency-cruiser baselines

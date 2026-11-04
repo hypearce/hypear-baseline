@@ -32,6 +32,7 @@ When asking, state the recommendation and the reason in one sentence, for exampl
 
 - **Rewritten history:** if the push needs to overwrite the remote branch, use `git push --force-with-lease`, never `--force`, and tell the user which remote commits will be replaced. `--force-with-lease` refuses if someone else pushed in the meantime.
 - **Default branch:** if the push targets the repository's default branch (usually `main`) directly, say so before pushing. Push only if the user asked for it or the repository's own instructions allow it; otherwise propose a branch.
+- **Releases:** the release commit pushed by `scripts/release.mjs` follows the release skill instead of this one.
 
 ## 2. Run
 

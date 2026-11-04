@@ -17,7 +17,7 @@ You receive the review scope (a base ref or paths), the changed files, and the d
 3. **Design:** Is the change in the right place? Does it duplicate existing code? Is it more complex than the problem requires? Does it follow the codebase's existing patterns?
 4. **Error handling:** Errors handled where something can be done about them; nothing swallowed silently; useful messages.
 5. **Tests:** Is new or changed behavior tested? Are the tests meaningful, or do they only exercise the happy path?
-6. **Documentation:** READMEs, CLAUDE.md, docs and comments that the change has made inaccurate.
+6. **Documentation:** READMEs, CLAUDE.md, docs and comments that the change has made inaccurate. If the repository has a `CHANGELOG.md`, user-visible changes need an `Unreleased` entry in the right category, and breaking changes need the `**Breaking:**` marker (see the hypear-baseline `changelog` skill).
 7. **Languages without a dedicated reviewer:** apply the same scrutiny to CSS, PowerShell, shell scripts, Makefiles, YAML and similar files in the change.
 8. **Infrastructure (Compose files, Dockerfiles, deployment scripts):**
    - Ports: published only where needed, and bound to `127.0.0.1` when only local access is intended.

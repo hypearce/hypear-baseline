@@ -6,16 +6,21 @@ Personal Claude Code defaults: voice, coding standards, problem-solving approach
 
 | Path | Purpose |
 |---|---|
-| `standards/` | Always-on guidance added to every session: voice, problem-solving, coding standards, response format |
+| `standards/` | Always-on guidance added to every session: voice, problem-solving, coding standards, versioning, response format |
 | `hooks/register.ts` | Adds `standards/*.md` and the review tooling location to the system prompt |
 | `skills/pre-push/` | Decides whether to run deterministic checks before `git push`, runs them, reports |
 | `skills/code-review/` | Full review: deterministic layer, then parallel agent reviewers by language |
 | `skills/testing/`, `skills/debugging/` | Testing and debugging approach |
+| `skills/changelog/` | Changelog format (Keep a Changelog 1.1.0) and entry writing |
+| `skills/release/` | Release from `main`: release commit, push, GitHub release |
 | `agents/` | Reviewers: `reviewer-general`, `reviewer-typescript`, `reviewer-content` |
 | `commands/` | `/review`, `/pr`, `/review-setup` |
 | `scripts/review.mjs` | Deterministic review engine (Node, no dependencies) |
+| `scripts/changelog.mjs` | Changelog `init`, `add`, `lint`, `status`, `notes` |
+| `scripts/release.mjs` | Release `plan`, `run`, `publish` (needs the GitHub CLI, `gh`) |
 | `configs/typescript/` | Baseline ESLint, knip and dependency-cruiser configs |
 | `docs/review-design.md` | Review system design and tenets |
+| `CHANGELOG.md` | Release history of this plugin |
 
 ## Review system
 
@@ -37,6 +42,10 @@ node scripts/review.mjs [--base <ref>] [--working] [--full] [--no-project] [--js
 
 Exit codes: `0` pass, `1` blocking failures, `2` could not run.
 
+## Versioning and releases
+
+Rules: `standards/versioning.md`. Before 1.0 every release is `1.0.0-pre.N`, counting up from 1; after 1.0, SemVer bumps follow the changelog entry types. Releases are cut from `main` with `node scripts/release.mjs plan`, then `run --version <version>` (see `skills/release/SKILL.md`).
+
 ## Install
 
 ```
@@ -46,6 +55,10 @@ Exit codes: `0` pass, `1` blocking failures, `2` could not run.
 ## Develop locally
 
 ```
+make setup     # check for Git, Node.js, make, gh and gitleaks; offers to install missing ones (Windows, winget)
+make test      # run the test suites
+make check     # validate CHANGELOG.md
 claude --plugin-dir ~/dev/hypear-baseline
-node --test scripts/test/review.test.mjs
 ```
+
+Without make, run `powershell -NoProfile -ExecutionPolicy RemoteSigned -File scripts/setup.ps1` first; it can install make too.
