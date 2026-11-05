@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Pre-1.0 releases now use `0.MINOR.PATCH-pre`, starting at `0.1.0-pre`, where breaking, `Removed`, `Added` and `Deprecated` entries bump MINOR and everything else bumps PATCH. Repositories that already released `1.0.0-pre.N` (including this one) continue counting N until 1.0.0.
+
 ## [1.0.0-pre.1] - 2026-11-04
 
 ### Added

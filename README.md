@@ -44,7 +44,7 @@ Exit codes: `0` pass, `1` blocking failures, `2` could not run.
 
 ## Versioning and releases
 
-Rules: `standards/versioning.md`. Before 1.0 every release is `1.0.0-pre.N`, counting up from 1; after 1.0, SemVer bumps follow the changelog entry types. Releases are cut from `main` with `node scripts/release.mjs plan`, then `run --version <version>` (see `skills/release/SKILL.md`).
+Rules: `standards/versioning.md`. Before 1.0 every release is `0.MINOR.PATCH-pre`, starting at `0.1.0-pre`; breaking, `Removed`, `Added` and `Deprecated` entries bump MINOR and everything else bumps PATCH, and after 1.0 SemVer bumps follow the changelog entry types. Releases are cut from `main` with `node scripts/release.mjs plan`, then `run --version <version>` (see `skills/release/SKILL.md`).
 
 ## Install
 

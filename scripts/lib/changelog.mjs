@@ -17,7 +17,11 @@ export const HEADER = [
 ].join('\n')
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?$/
-const PRE = /^1\.0\.0-pre\.([1-9]\d*)$/
+// Before 1.0, releases are 0.MINOR.PATCH-pre. Repositories that already released
+// under the earlier 1.0.0-pre.N scheme keep counting N until they reach 1.0.0.
+const PRE = /^0\.(0|[1-9]\d*)\.(0|[1-9]\d*)-pre$/
+const LEGACY_PRE = /^1\.0\.0-pre\.([1-9]\d*)$/
+const FIRST_VERSION = '0.1.0-pre'
 const SECTION = /^## \[([^\]]+)\](.*)$/
 const RELEASE_SUFFIX = /^ - (\d{4}-\d{2}-\d{2})( \[YANKED\])?$/
 const LINK_DEF = /^\[([^\]]+)\]:\s*(\S+)\s*$/
@@ -64,28 +68,48 @@ export function bumpFor(groups) {
  * version or null. Returns { version, reason } or { version: null, reason }.
  */
 export function nextVersion(last, groups) {
-  if (!last) return { version: '1.0.0-pre.1', reason: 'first release' }
-  const pre = PRE.exec(last)
-  if (pre) return { version: `1.0.0-pre.${+pre[1] + 1}`, reason: `pre-1.0 release after ${last}` }
+  if (!last) return { version: FIRST_VERSION, reason: 'first release' }
+  const legacy = LEGACY_PRE.exec(last)
+  if (legacy) return { version: `1.0.0-pre.${+legacy[1] + 1}`, reason: `pre-1.0 release after ${last} (earlier 1.0.0-pre.N scheme)` }
   const v = parseSemver(last)
   if (!v) return { version: null, reason: `${last} is not a valid SemVer version` }
-  if (v.pre.length) return { version: null, reason: `${last} does not follow the 1.0.0-pre.N scheme; pass the version explicitly` }
-  if (v.major === 0) return { version: '1.0.0-pre.1', reason: `${last} predates the pre.N scheme; pre-1.0 releases continue as 1.0.0-pre.N` }
+  if (v.major === 0) return nextPreRelease(last, v, groups)
+  if (v.pre.length) return { version: null, reason: `${last} is a pre-release outside the 0.MINOR.PATCH-pre and 1.0.0-pre.N schemes; pass the version explicitly` }
   const bump = bumpFor(groups)
   const version = bump === 'major' ? `${v.major + 1}.0.0` : bump === 'minor' ? `${v.major}.${v.minor + 1}.0` : `${v.major}.${v.minor}.${v.patch + 1}`
   const why = { major: 'breaking change or removal', minor: 'Added or Deprecated entries, no breaking change', patch: 'fixes and non-breaking changes only' }[bump]
   return { version, reason: `${bump}: ${why}` }
 }
 
+/**
+ * Pre-1.0 bump, always with -pre: a major or minor change bumps MINOR and resets
+ * PATCH; anything else bumps PATCH. Plain 0.y.z releases continue the same way.
+ */
+function nextPreRelease(last, v, groups) {
+  if (v.pre.length && !PRE.test(last)) return { version: null, reason: `${last} does not follow the 0.MINOR.PATCH-pre scheme; pass the version explicitly` }
+  if (bumpFor(groups) === 'patch') return { version: `0.${v.minor}.${v.patch + 1}-pre`, reason: 'pre-1.0 patch: fixes and non-breaking changes only' }
+  return { version: `0.${v.minor + 1}.0-pre`, reason: 'pre-1.0 minor: breaking change, removal, Added or Deprecated entries' }
+}
+
 /** Checks a requested version against the rules. Returns an error message or null. */
 export function checkRequested(last, requested, computed) {
   if (!parseSemver(requested)) return `${requested} is not a valid SemVer version`
   if (last && compareSemver(requested, last) <= 0) return `${requested} is not greater than the last release ${last}`
-  if (computed && PRE.test(computed)) {
+  if (computed && LEGACY_PRE.test(computed)) {
     if (requested === computed || requested === '1.0.0') return null
     return `before 1.0 the next release is ${computed} (or 1.0.0, if you are declaring the interface stable)`
   }
-  if (parseSemver(requested).pre.length) return 'pre-release suffixes are only used before 1.0 (1.0.0-pre.N)'
+  // With no computed version (the last release is an off-scheme 0.x pre-release),
+  // the pre-1.0 rules still apply to the version passed explicitly.
+  const beforeOne = computed ? PRE.test(computed) : parseSemver(last ?? '')?.major === 0
+  if (beforeOne) {
+    if (requested === '1.0.0') return null
+    const next = computed ? ` (next: ${computed})` : ''
+    if (!PRE.test(requested)) return `before 1.0 every release is 0.MINOR.PATCH-pre${next}, or 1.0.0 when declaring the interface stable`
+    if (computed && compareSemver(requested, computed) < 0) return `the Unreleased entries require at least ${computed}`
+    return null
+  }
+  if (parseSemver(requested).pre.length) return 'pre-release suffixes are only used before 1.0 (0.MINOR.PATCH-pre)'
   if (computed && compareSemver(requested, computed) < 0) return `the Unreleased entries require at least ${computed}`
   return null
 }
