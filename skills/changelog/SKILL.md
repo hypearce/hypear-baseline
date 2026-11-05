@@ -34,7 +34,7 @@ Exit codes: `0` ok, `1` findings or refused, `2` usage error. Use `add` for new 
 
 What `init` writes, and what `lint` enforces:
 - `# Changelog`, the standard intro, then `## [Unreleased]` as the first section, always present.
-- Releases newest first: `## [1.0.0-pre.2] - 2026-11-03`, ISO 8601 dates; yanked releases keep their section with ` [YANKED]` appended. Never delete a released section.
+- Releases newest first: `## [0.2.0-pre] - 2026-11-03`, ISO 8601 dates; yanked releases keep their section with ` [YANKED]` appended. Never delete a released section.
 - Inside a section, only `### <type>` groups with `- ` bullets (continuation lines indented), in this order: `Added` (new features), `Changed` (changes in existing functionality), `Deprecated` (soon-to-be removed features), `Removed` (now removed features), `Fixed` (bug fixes), `Security` (vulnerabilities). No empty groups.
 - If the file has version link definitions at the bottom, every section has one. The release script maintains them.
 

@@ -46,15 +46,26 @@ const VALID = `${HEADER}
 `
 
 test('compareSemver follows SemVer precedence', () => {
-  const ordered = ['1.0.0-pre.1', '1.0.0-pre.2', '1.0.0-pre.10', '1.0.0', '1.0.1', '1.1.0', '2.0.0']
+  const ordered = ['0.1.0-pre', '0.1.1-pre', '0.2.0-pre', '0.10.0-pre', '1.0.0-pre.1', '1.0.0-pre.2', '1.0.0-pre.10', '1.0.0', '1.0.1', '1.1.0', '2.0.0']
   for (let i = 1; i < ordered.length; i++) assert.ok(compareSemver(ordered[i - 1], ordered[i]) < 0, `${ordered[i - 1]} < ${ordered[i]}`)
   assert.equal(compareSemver('1.0.0', '1.0.0'), 0)
 })
 
-test('nextVersion: pre.N before 1.0, SemVer bumps after', () => {
-  assert.equal(nextVersion(null, {}).version, '1.0.0-pre.1')
+test('nextVersion: 0.MINOR.PATCH-pre before 1.0, SemVer bumps after', () => {
+  assert.equal(nextVersion(null, {}).version, '0.1.0-pre')
+  assert.equal(nextVersion('0.1.0-pre', groups('### Fixed\n\n- X.\n')).version, '0.1.1-pre')
+  assert.equal(nextVersion('0.1.1-pre', groups('### Changed\n\n- Y.\n')).version, '0.1.2-pre')
+  assert.equal(nextVersion('0.1.2-pre', groups('### Added\n\n- X.\n')).version, '0.2.0-pre')
+  assert.equal(nextVersion('0.2.0-pre', groups('### Deprecated\n\n- X.\n')).version, '0.3.0-pre')
+  assert.equal(nextVersion('0.3.0-pre', groups('### Changed\n\n- **Breaking:** X.\n')).version, '0.4.0-pre')
+  assert.equal(nextVersion('0.4.0-pre', groups('### Removed\n\n- X.\n')).version, '0.5.0-pre')
+  assert.equal(nextVersion('0.3.0', groups('### Fixed\n\n- X.\n')).version, '0.3.1-pre')
+  assert.equal(nextVersion('0.0.3', groups('### Added\n\n- X.\n')).version, '0.1.0-pre')
+  assert.equal(nextVersion('0.0.3', groups('### Removed\n\n- X.\n')).version, '0.1.0-pre')
+  assert.match(nextVersion('0.3.0-rc.1', {}).reason, /0\.MINOR\.PATCH-pre scheme/)
+  assert.equal(nextVersion('0.3.0-rc.1', {}).version, null)
+  assert.match(nextVersion('1.0.0-rc.1', {}).reason, /outside the 0\.MINOR\.PATCH-pre and 1\.0\.0-pre\.N schemes/)
   assert.equal(nextVersion('1.0.0-pre.3', groups('### Removed\n\n- X.\n')).version, '1.0.0-pre.4')
-  assert.equal(nextVersion('0.3.0', {}).version, '1.0.0-pre.1')
   assert.equal(nextVersion('1.2.3', groups('### Fixed\n\n- X.\n')).version, '1.2.4')
   assert.equal(nextVersion('1.2.3', groups('### Changed\n\n- Y.\n')).version, '1.2.4')
   assert.equal(nextVersion('1.2.3', groups('### Added\n\n- X.\n')).version, '1.3.0')
@@ -72,10 +83,24 @@ test('checkRequested enforces the versioning rules', () => {
   assert.equal(checkRequested('1.0.0-pre.3', '1.0.0', '1.0.0-pre.4'), null)
   assert.match(checkRequested('1.0.0-pre.3', '1.0.0-pre.6', '1.0.0-pre.4'), /next release is 1\.0\.0-pre\.4/)
   assert.match(checkRequested('1.0.0-pre.3', '0.5.0', '1.0.0-pre.4'), /not greater/)
+  assert.equal(checkRequested(null, '0.1.0-pre', '0.1.0-pre'), null)
+  assert.equal(checkRequested('0.1.0-pre', '0.1.1-pre', '0.1.1-pre'), null)
+  assert.equal(checkRequested('0.1.0-pre', '0.2.0-pre', '0.1.1-pre'), null)
+  assert.equal(checkRequested('0.4.2-pre', '1.0.0', '0.4.3-pre'), null)
+  assert.match(checkRequested('0.1.0-pre', '0.1.1-pre', '0.2.0-pre'), /at least 0\.2\.0-pre/)
+  assert.match(checkRequested('0.1.0-pre', '0.2.0', '0.2.0-pre'), /every release is 0\.MINOR\.PATCH-pre/)
+  assert.match(checkRequested('0.1.0-pre', '0.2.0-pre.1', '0.2.0-pre'), /every release is 0\.MINOR\.PATCH-pre/)
+  assert.match(checkRequested('0.1.0-pre', '2.0.0', '0.2.0-pre'), /every release is 0\.MINOR\.PATCH-pre/)
+  assert.match(checkRequested('0.3.0-pre', '0.3.0', '0.3.1-pre'), /every release is 0\.MINOR\.PATCH-pre/)
+  assert.match(checkRequested('1.0.0-pre.3', '0.9.0-pre', '1.0.0-pre.4'), /not greater/)
+  // Off-scheme 0.x last release: nothing is computed, but the pre-1.0 rules still apply.
+  assert.equal(checkRequested('0.3.0-rc.1', '0.4.0-pre', null), null)
+  assert.equal(checkRequested('0.3.0-rc.1', '1.0.0', null), null)
+  assert.match(checkRequested('0.3.0-rc.1', '0.4.0', null), /every release is 0\.MINOR\.PATCH-pre, or 1\.0\.0/)
   assert.match(checkRequested('1.2.3', '1.2.4', '1.3.0'), /at least 1\.3\.0/)
   assert.equal(checkRequested('1.2.3', '2.0.0', '1.3.0'), null)
   assert.match(checkRequested('1.2.3', '1.3.0-rc.1', '1.3.0'), /only used before 1\.0/)
-  assert.match(checkRequested(null, 'v1', '1.0.0-pre.1'), /not a valid SemVer/)
+  assert.match(checkRequested(null, 'v1', '0.1.0-pre'), /not a valid SemVer/)
 })
 
 test('lint accepts a valid changelog and reports format problems', () => {
@@ -224,20 +249,20 @@ test('release run: commits changelog and declarations, pushes main, creates the 
   write('CHANGELOG.md', `${HEADER}\n### Added\n\n- First feature.\n\n### Fixed\n\n- Late fix.\n`)
   const plan = release('plan')
   assert.equal(plan.code, 0, JSON.stringify(plan.out.checks))
-  assert.equal(plan.out.version, '1.0.0-pre.1')
+  assert.equal(plan.out.version, '0.1.0-pre')
   assert.deepEqual(plan.out.files, ['CHANGELOG.md', '.claude-plugin/plugin.json'])
 
-  const run = release('run', '--version', '1.0.0-pre.1', '--co-author', 'Bot <bot@example.com>')
+  const run = release('run', '--version', '0.1.0-pre', '--co-author', 'Bot <bot@example.com>')
   assert.equal(run.code, 0, JSON.stringify(run.out))
   assert.equal(sh(bare, 'rev-parse', 'main').trim(), run.out.sha)
-  assert.equal(sh(dir, 'log', '-1', '--format=%B').trim(), 'Release v1.0.0-pre.1\n\nCo-Authored-By: Bot <bot@example.com>')
+  assert.equal(sh(dir, 'log', '-1', '--format=%B').trim(), 'Release v0.1.0-pre\n\nCo-Authored-By: Bot <bot@example.com>')
   assert.deepEqual(sh(dir, 'show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort(), ['.claude-plugin/plugin.json', 'CHANGELOG.md'])
   const changelog = readFileSync(join(dir, 'CHANGELOG.md'), 'utf8')
-  assert.match(changelog, /## \[Unreleased\]\n\n## \[1\.0\.0-pre\.1\] - \d{4}-\d{2}-\d{2}\n\n### Added\n\n- First feature\.\n\n### Fixed\n\n- Late fix\.\n/)
-  assert.match(changelog, /\[1\.0\.0-pre\.1\]: https:\/\/github\.com\/o\/r\/releases\/tag\/v1\.0\.0-pre\.1\n$/)
-  assert.equal(JSON.parse(readFileSync(join(dir, '.claude-plugin/plugin.json'), 'utf8')).version, '1.0.0-pre.1')
+  assert.match(changelog, /## \[Unreleased\]\n\n## \[0\.1\.0-pre\] - \d{4}-\d{2}-\d{2}\n\n### Added\n\n- First feature\.\n\n### Fixed\n\n- Late fix\.\n/)
+  assert.match(changelog, /\[0\.1\.0-pre\]: https:\/\/github\.com\/o\/r\/releases\/tag\/v0\.1\.0-pre\n$/)
+  assert.equal(JSON.parse(readFileSync(join(dir, '.claude-plugin/plugin.json'), 'utf8')).version, '0.1.0-pre')
   const create = ghCalls().find(a => a[1] === 'create')
-  assert.deepEqual(create.slice(0, 7), ['release', 'create', 'v1.0.0-pre.1', '--repo', 'o/r', '--target', run.out.sha])
+  assert.deepEqual(create.slice(0, 7), ['release', 'create', 'v0.1.0-pre', '--repo', 'o/r', '--target', run.out.sha])
   assert.ok(create.includes('--prerelease'))
 
   const again = release('plan')
@@ -247,12 +272,12 @@ test('release run: commits changelog and declarations, pushes main, creates the 
 
 test('release refuses to run off main, with local changes, or with an unexpected version', t => {
   const { dir, sh, write, release } = releaseRepo(t)
-  assert.match(release('run', '--version', '1.0.0-pre.5').out.checks.find(c => !c.ok).detail, /next release is 1\.0\.0-pre\.1/)
+  assert.match(release('run', '--version', '1.0.0-pre.5').out.checks.find(c => !c.ok).detail, /next: 0\.1\.0-pre/)
   write('src.txt', 'changed\n')
   assert.ok(release('plan').out.checks.some(c => c.name === 'no uncommitted changes other than CHANGELOG.md' && !c.ok))
   sh(dir, 'checkout', '-q', '--', 'src.txt')
   sh(dir, 'checkout', '-qb', 'feature')
-  const off = release('run', '--version', '1.0.0-pre.1')
+  const off = release('run', '--version', '0.1.0-pre')
   assert.equal(off.code, 1)
   assert.ok(off.out.checks.some(c => c.name === 'on main' && !c.ok))
   assert.equal(sh(dir, 'status', '--porcelain'), '')
@@ -261,21 +286,21 @@ test('release refuses to run off main, with local changes, or with an unexpected
 test('release run: a failed GitHub release leaves the pushed commit, and publish completes it', t => {
   const { dir, bare, sh, release, ghCalls, env } = releaseRepo(t)
   env.FAKE_GH_FAIL_CREATE = '1'
-  const run = release('run', '--version', '1.0.0-pre.1')
+  const run = release('run', '--version', '0.1.0-pre')
   assert.equal(run.code, 1)
   assert.equal(run.out.error.includes('HTTP 502'), true, JSON.stringify(run.out))
   assert.equal(sh(bare, 'rev-parse', 'main').trim(), run.out.sha)
 
   delete env.FAKE_GH_FAIL_CREATE
-  const publish = release('publish', '--version', '1.0.0-pre.1')
+  const publish = release('publish', '--version', '0.1.0-pre')
   assert.equal(publish.code, 0, JSON.stringify(publish.out))
   assert.deepEqual(ghCalls().filter(a => a[1] === 'create').at(-1).slice(5, 7), ['--target', run.out.sha])
 
   sh(dir, 'commit', '-q', '--allow-empty', '-m', 'later work')
   sh(dir, 'push', '-q', 'origin', 'main')
-  const late = release('publish', '--version', '1.0.0-pre.1')
+  const late = release('publish', '--version', '0.1.0-pre')
   assert.equal(late.code, 1)
-  assert.ok(late.out.checks.some(c => c.name === 'HEAD is the release commit for 1.0.0-pre.1' && !c.ok))
+  assert.ok(late.out.checks.some(c => c.name === 'HEAD is the release commit for 0.1.0-pre' && !c.ok))
 })
 
 test('release run: a failed push keeps the local release commit and reports how to continue', t => {
@@ -283,11 +308,11 @@ test('release run: a failed push keeps the local release commit and reports how 
   const before = sh(bare, 'rev-parse', 'main').trim()
   writeFileSync(join(bare, 'hooks', 'pre-receive'), '#!/bin/sh\necho rejected >&2\nexit 1\n')
   chmodSync(join(bare, 'hooks', 'pre-receive'), 0o755)
-  const run = release('run', '--version', '1.0.0-pre.1')
+  const run = release('run', '--version', '0.1.0-pre')
   assert.equal(run.code, 1)
   assert.equal(run.out.error, 'push failed')
   assert.equal(sh(bare, 'rev-parse', 'main').trim(), before)
-  assert.equal(sh(dir, 'log', '-1', '--format=%s').trim(), 'Release v1.0.0-pre.1')
+  assert.equal(sh(dir, 'log', '-1', '--format=%s').trim(), 'Release v0.1.0-pre')
 })
 
 test('release run: a failed write restores the changelog and declarations', t => {
@@ -297,7 +322,7 @@ test('release run: a failed write restores the changelog and declarations', t =>
   const plugin = join(dir, '.claude-plugin/plugin.json')
   const original = readFileSync(plugin, 'utf8')
   chmodSync(plugin, 0o444)
-  const run = release('run', '--version', '1.0.0-pre.1')
+  const run = release('run', '--version', '0.1.0-pre')
   assert.equal(run.code, 1)
   assert.match(run.out.error, /EPERM|EACCES/)
   assert.equal(readFileSync(join(dir, 'CHANGELOG.md'), 'utf8'), edited)
