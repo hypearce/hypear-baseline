@@ -27,8 +27,10 @@ Find and read the project's content rules: an authoring guide (for example, `doc
 Return only findings, ranked most severe first:
 
 ```
-- [Bug|Risk|Cleanup|Nit] `file:line` (or entry id): <problem>. Fix: <concrete fix>. (Confidence: high|medium)
+- [Bug|Risk|Cleanup|Nit|Auto-fix] `file:line` (or entry id): <problem>. Fix: <concrete fix>. (Confidence: high|medium)
 ```
+
+Label a finding `Auto-fix` only for a low-stakes fix: it cannot change behavior (comments, documentation, whitespace, commit messages), its meaning is unambiguous (wording may vary, meaning may not), it stays within the changed lines, it is not security-relevant, and your confidence is high. Anything else, however small, is Cleanup or Nit. The orchestrator verifies `Auto-fix` findings before applying them.
 
 Then one line: `Assessment: <one-sentence judgment>`.
 

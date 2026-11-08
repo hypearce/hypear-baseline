@@ -23,7 +23,7 @@ node "<plugin root>/scripts/release.mjs" publish --version X
 ```
 
 - `plan` checks and prints the plan; it changes nothing. Without `--version` it computes the next version.
-- `run` re-checks, then writes the changelog and version declarations, commits `Release vX`, pushes `main` and creates the GitHub release. If anything fails before the commit, it restores the files.
+- `run` re-checks, then writes the changelog and version declarations, commits `Release vX` (the subject the commit standard prescribes for releases), pushes `main` and creates the GitHub release. If anything fails before the commit, it restores the files.
 - `publish` creates only the GitHub release, for a release commit already on `origin/main` (recovery after a failed `run`).
 - Exit codes: `0` ok, `1` checks or a step failed, `2` usage error or not a git repository. Add `--json` for structured output.
 

@@ -274,6 +274,76 @@ test('commit hygiene runs in full mode only', t => {
   assert.equal(full.result, 'fail')
 })
 
+// A feature branch whose second commit has the given subject.
+function subjectRepo(t, subject) {
+  const repo = branchRepo(t, ({ write }) => write('a.txt', 'a\n'), ({ write }) => write('b.txt', 'b\n'))
+  repo.write('b.txt', 'b2\n'); repo.sh('commit', '-qam', subject)
+  return repo
+}
+
+test('long commit subjects are auto-fix findings in full mode only and do not warn', t => {
+  const { dir } = subjectRepo(t, `Add ${'x'.repeat(70)}`)
+  assert.deepEqual(findingsFor(review(dir, '--base', 'main').report, 'commit-subject-length'), [])
+  const { code, report } = review(dir, '--base', 'main', '--full')
+  const [finding] = findingsFor(report, 'commit-subject-length')
+  assert.equal(finding?.severity, 'autofix')
+  assert.equal(report.result, 'pass')
+  assert.equal(code, 0)
+})
+
+test('a subject of exactly 72 characters passes', t => {
+  const { dir } = subjectRepo(t, `Add ${'x'.repeat(68)}`)
+  assert.deepEqual(findingsFor(review(dir, '--base', 'main', '--full').report, 'commit-subject-length'), [])
+})
+
+test('commit subjects ending in a period are auto-fix findings', t => {
+  const { dir } = subjectRepo(t, 'Add the thing.')
+  assert.equal(findingsFor(review(dir, '--base', 'main', '--full').report, 'commit-subject-period').length, 1)
+})
+
+test('merge commit subjects are not checked', t => {
+  const { dir, sh, write } = branchRepo(t, ({ write }) => write('a.txt', 'a\n'), ({ write }) => write('b.txt', 'b\n'))
+  sh('checkout', '-qb', 'side', 'main')
+  write('c.txt', 'c\n'); sh('add', '-A'); sh('commit', '-qm', 'side')
+  sh('checkout', '-q', 'feature')
+  sh('merge', '-q', '--no-ff', '-m', `Merge branch 'side' into feature with a ${'very '.repeat(12)}long subject.`, 'side')
+  const { report } = review(dir, '--base', 'main', '--full')
+  assert.deepEqual(report.findings.filter(f => f.severity === 'autofix'), [])
+})
+
+test('a WIP subject that also ends in a period still fails the review', t => {
+  const { dir } = subjectRepo(t, 'WIP.')
+  const { code, report } = review(dir, '--base', 'main', '--full')
+  assert.equal(findingsFor(report, 'commit-hygiene').length, 1)
+  assert.equal(findingsFor(report, 'commit-subject-period').length, 1)
+  assert.equal(report.result, 'fail')
+  assert.equal(code, 1)
+  assert.ok(report.checks.some(c => c.name.startsWith('commit hygiene') && c.status === 'failed'))
+})
+
+test('subjects containing tabs are measured in full', t => {
+  const { dir } = subjectRepo(t, `Add\t${'x'.repeat(70)}.`)
+  const { report } = review(dir, '--base', 'main', '--full')
+  assert.equal(findingsFor(report, 'commit-subject-length').length, 1)
+  assert.equal(findingsFor(report, 'commit-subject-period').length, 1)
+})
+
+test('subject checks are skipped when the project uses commitlint', t => {
+  const { dir, sh, write } = branchRepo(t, ({ write }) => write('commitlint.config.js', 'export default {}\n'), ({ write }) => write('b.txt', 'b\n'))
+  write('b.txt', 'b2\n'); sh('commit', '-qam', 'Add the thing.')
+  const { report } = review(dir, '--base', 'main', '--full')
+  assert.deepEqual(report.findings.filter(f => f.severity === 'autofix'), [])
+  assert.ok(report.skipped.some(s => s.startsWith('Commit subjects: skipped')))
+})
+
+test('markdown lists auto-fix findings in their own section', t => {
+  const { dir } = subjectRepo(t, 'Add the thing.')
+  const r = spawnSync(process.execPath, [REVIEW, '--no-project', '--full', '--base', 'main'], { cwd: dir, encoding: 'utf8' })
+  assert.match(r.stdout, /^# Deterministic review: PASS$/m)
+  assert.match(r.stdout, /## Auto-fix\n[\s\S]*commit-subject-period/)
+  assert.doesNotMatch(r.stdout, /## Findings/)
+})
+
 test('file names reach installed tools verbatim, without a shell', t => {
   const name = "src/it's $HOME.ts"
   const { dir } = branchRepo(t, ({ write }) => {

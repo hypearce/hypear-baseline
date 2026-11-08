@@ -23,7 +23,7 @@ setup:
 endif
 
 test:
-	node --test scripts/test/review.test.mjs scripts/test/release.test.mjs
+	node --test scripts/test/review.test.mjs scripts/test/release.test.mjs scripts/test/reword.test.mjs
 
 check:
 	node scripts/changelog.mjs lint
