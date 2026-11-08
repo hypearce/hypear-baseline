@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- GitHub issue standard (`standards/issues.md`), loaded every session: when to create an issue, title rules, one body format (Problem, Proposal, Acceptance, Depends on), labels, and `#N` linking. The voice standard now covers issue text. (#3)
+
 ## [1.0.0-pre.3] - 2026-11-08
 
 ### Added

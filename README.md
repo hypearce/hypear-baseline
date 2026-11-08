@@ -6,7 +6,7 @@ Personal Claude Code defaults: voice, coding standards, problem-solving approach
 
 | Path | Purpose |
 |---|---|
-| `standards/` | Always-on guidance added to every session: voice, problem-solving, coding standards, versioning, commit messages, pull requests, response format |
+| `standards/` | Always-on guidance added to every session: voice, problem-solving, coding standards, versioning, commit messages, pull requests, GitHub issues, response format |
 | `hooks/register.ts` | Adds `standards/*.md` and the review tooling location to the system prompt |
 | `skills/pre-push/` | Decides whether to run deterministic checks before `git push`, runs them, reports |
 | `skills/code-review/` | Full review: deterministic layer, then parallel agent reviewers by language |
