@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-pre.3] - 2026-11-08
+
 ### Added
 
 - Commit message standard (`standards/commits.md`) and pull request standard (`standards/pull-requests.md`), loaded every session: subject and body rules, trailers, PR titles, and short PR descriptions with Summary, Changes and Closes sections and no attribution. `/pr` and the code-review and release skills follow them. (#4)
@@ -32,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/review`, `/pr` and `/review-setup` commands.
 - Baseline ESLint, knip and dependency-cruiser configs for TypeScript projects.
 
-[unreleased]: https://github.com/hypearce/hypear-baseline/compare/v1.0.0-pre.2...HEAD
+[unreleased]: https://github.com/hypearce/hypear-baseline/compare/v1.0.0-pre.3...HEAD
+[1.0.0-pre.3]: https://github.com/hypearce/hypear-baseline/compare/v1.0.0-pre.2...v1.0.0-pre.3
 [1.0.0-pre.2]: https://github.com/hypearce/hypear-baseline/compare/v1.0.0-pre.1...v1.0.0-pre.2
 [1.0.0-pre.1]: https://github.com/hypearce/hypear-baseline/releases/tag/v1.0.0-pre.1
