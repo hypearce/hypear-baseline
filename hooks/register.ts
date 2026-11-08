@@ -1,7 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 // Always-on guidance, added to the system prompt in this order.
-const STANDARDS = ['voice.md', 'problem-solving.md', 'coding-standards.md', 'versioning.md', 'style.md']
+const STANDARDS = ['voice.md', 'problem-solving.md', 'coding-standards.md', 'versioning.md', 'commits.md', 'pull-requests.md', 'style.md']
 
 let cached: string | undefined
 

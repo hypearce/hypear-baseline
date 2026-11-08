@@ -4,7 +4,7 @@
 // Usage: node review.mjs [--base <ref>] [--working] [--full] [--no-project] [--json] [--cwd <dir>]
 //   --base <ref>   Compare against this ref (default: upstream, then origin/HEAD, then main/master).
 //   --working      Include uncommitted and untracked changes (default: commits only, as a push sends).
-//   --full         PR mode: scan all source for Electron rules, run knip and dependency audit.
+//   --full         PR mode: scan all source for Electron rules, run knip and dependency audit, check commits.
 //   --no-project   Skip the project's own commands (make test, etc.).
 //   --json         Print the report as JSON instead of Markdown.
 //
@@ -21,7 +21,8 @@ import { shellSyntaxChecks } from './checks/shell.mjs'
 
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1000
 const OUTPUT_TAIL_LINES = 40
-const SEVERITY_ORDER = { bug: 0, risk: 1, cleanup: 2 }
+// autofix: mechanical fixes Claude applies without asking; they never block or warn.
+const SEVERITY_ORDER = { bug: 0, risk: 1, cleanup: 2, autofix: 3 }
 const COMPOSE_FILE = /(^|\/)(docker-)?compose(\.[\w-]+)?\.ya?ml$/i
 const DOCKERFILE = /(^|\/)(Dockerfile|Containerfile)(\.[\w-]+)?$|\.dockerfile$/i
 const DOC_ONLY =/\.(md|mdx|txt|rst)$|(^|\/)(LICENSE|CHANGELOG|AUTHORS)[^/]*$/i
@@ -109,8 +110,9 @@ function review(args) {
   // Commit hygiene matters for PRs; a pushed work-in-progress branch is normal.
   if (args.full && scope.mode !== 'initial') {
     const commits = commitChecks(root, scope)
-    report.findings.push(...commits)
-    report.checks.push({ name: 'commit hygiene (built-in)', status: commits.length ? 'failed' : 'passed' })
+    report.findings.push(...commits.findings)
+    report.skipped.push(...commits.notes)
+    report.checks.push({ name: 'commit hygiene and subjects (built-in)', status: commits.findings.some(f => f.severity !== 'autofix') ? 'failed' : 'passed' })
   }
 
   const livePaths = changes.live.map(f => f.path)
@@ -168,7 +170,7 @@ function review(args) {
 
   report.findings.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || a.file.localeCompare(b.file) || (a.line ?? 0) - (b.line ?? 0))
   const blocking = report.findings.some(f => f.severity === 'bug') || report.checks.some(c => c.status === 'failed' && c.severity === 'bug')
-  const warnings = report.findings.length > 0 || report.checks.some(c => c.status === 'failed')
+  const warnings = report.findings.some(f => f.severity !== 'autofix') || report.checks.some(c => c.status === 'failed')
   report.result = blocking ? 'fail' : warnings ? 'warn' : 'pass'
   return report
 }
@@ -184,11 +186,11 @@ function toMarkdown(r) {
     for (const c of r.checks) out.push(`| ${c.name} | ${c.status}${c.status === 'failed' && c.severity && c.severity !== 'bug' ? ` (${c.severity})` : ''} | ${c.ms !== undefined ? `${(c.ms / 1000).toFixed(1)}s` : '-'} |`)
     out.push('')
   }
-  if (r.findings.length) {
-    out.push('## Findings', '')
-    for (const f of r.findings) out.push(`- **${f.severity}** \`${f.file}${f.line ? `:${f.line}` : ''}\` [${f.rule}] ${f.message}`)
-    out.push('')
-  }
+  const findingLine = f => `- **${f.severity}** \`${f.file}${f.line ? `:${f.line}` : ''}\` [${f.rule}] ${f.message}`
+  const findings = r.findings.filter(f => f.severity !== 'autofix')
+  const autofixes = r.findings.filter(f => f.severity === 'autofix')
+  if (findings.length) out.push('## Findings', '', ...findings.map(findingLine), '')
+  if (autofixes.length) out.push('## Auto-fix', '', 'Apply these without asking, rerun the review, and list each one in the review report.', '', ...autofixes.map(findingLine), '')
   for (const c of r.checks.filter(c => c.output)) out.push(`## Output: ${c.name}`, '', '```', c.output, '```', '')
   if (r.skipped.length) {
     out.push('## Not covered', '')

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Commit message standard (`standards/commits.md`) and pull request standard (`standards/pull-requests.md`), loaded every session: subject and body rules, trailers, PR titles, and short PR descriptions with Summary, Changes and Closes sections and no attribution. `/pr` and the code-review and release skills follow them. (#4)
+- Auto-fix review level for low-stakes fixes that cannot change behavior, such as commit message format or a typo in a comment. Claude applies them without asking, and every one is listed in the review report's Auto-fixed section and the PR description. Criteria are in `docs/review-design.md`. Auto-fix findings never block a review or count as warnings. (#4)
+- Full review (`--full`) reports commit subjects over 72 characters or ending in a period as auto-fix findings, except in projects with a commitlint configuration. `scripts/reword.mjs` applies the fixes: it checks each new message with the project's commit-msg hook, rewords commits in place, keeps merge commits and uncommitted changes, and leaves the branch unchanged if anything fails. Needs git 2.38 or later. (#4)
+
 ## [1.0.0-pre.2] - 2026-11-04
 
 ### Changed

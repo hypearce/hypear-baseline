@@ -6,7 +6,7 @@ Personal Claude Code defaults: voice, coding standards, problem-solving approach
 
 | Path | Purpose |
 |---|---|
-| `standards/` | Always-on guidance added to every session: voice, problem-solving, coding standards, versioning, response format |
+| `standards/` | Always-on guidance added to every session: voice, problem-solving, coding standards, versioning, commit messages, pull requests, response format |
 | `hooks/register.ts` | Adds `standards/*.md` and the review tooling location to the system prompt |
 | `skills/pre-push/` | Decides whether to run deterministic checks before `git push`, runs them, reports |
 | `skills/code-review/` | Full review: deterministic layer, then parallel agent reviewers by language |
@@ -18,6 +18,7 @@ Personal Claude Code defaults: voice, coding standards, problem-solving approach
 | `scripts/review.mjs` | Deterministic review engine (Node, no dependencies) |
 | `scripts/changelog.mjs` | Changelog `init`, `add`, `lint`, `status`, `notes` |
 | `scripts/release.mjs` | Release `plan`, `run`, `publish` (needs the GitHub CLI, `gh`) |
+| `scripts/reword.mjs` | Rewords commit messages for review auto-fixes, without an interactive editor |
 | `configs/typescript/` | Baseline ESLint, knip and dependency-cruiser configs |
 | `docs/review-design.md` | Review system design and tenets |
 | `CHANGELOG.md` | Release history of this plugin |

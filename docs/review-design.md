@@ -12,7 +12,7 @@ This plugin is for personal repositories. Pushes and pull requests are performed
 2. **Deterministic first, agentic second.** Tools run first and their output is passed to the agents. Agents do not spend effort on what a tool can prove.
 3. **The project's own checks are authoritative.** Discover and run the project's existing commands (`make test`, `make check`, package scripts) before any plugin defaults.
 4. **Route by language.** File types in the diff determine which language checkers and reviewers run. The language-agnostic layer always runs.
-5. **Report, don't silently fix.** Findings are presented to the user, ranked by severity. Code changes happen only when the user approves them.
+5. **Report, don't silently fix.** Findings are presented to the user, ranked by severity. Code changes happen only when the user approves them. The one exception is auto-fix findings: low-stakes fixes that meet every criterion under Auto-fix, which Claude applies without asking and always lists in the review report.
 6. **Findings are specific.** Each finding includes `file:line`, the problem, and a concrete fix. "No issues found" is a valid result.
 7. **Be transparent about coverage.** Always state which checks ran, which were skipped, and why.
 
@@ -46,7 +46,7 @@ Creating a pull request runs the full review, both deterministic and agentic, th
 2. Run the agnostic reviewer and each applicable language reviewer, passing them the diff and the deterministic results.
 3. Present a consolidated report, ranked by severity.
 4. The user decides whether to address findings or proceed.
-5. Draft the PR title and description, including a short summary of the review results, and create the PR on the user's confirmation.
+5. Draft the PR title and description (`standards/pull-requests.md`), and create the PR on the user's confirmation.
 
 ## Layers
 
@@ -68,6 +68,7 @@ Creating a pull request runs the full review, both deterministic and agentic, th
 - Manifest changed without its lockfile (for example, `package.json` without `pnpm-lock.yaml`)
 - Portability (Windows editing, Linux running): CRLF in shell scripts, Makefiles and Dockerfiles; scripts with a shebang but no executable bit; paths that differ only by letter case
 - Commit hygiene, `--full` only: no `fixup!`, `squash!`, `amend!` or WIP commits in a PR
+- Commit subjects, `--full` only, auto-fix: at most 72 characters, no trailing period, per `standards/commits.md` (merge commits excluded; skipped when the project has a commitlint configuration)
 
 **Agentic: general reviewer**
 - Does the change do what its commits claim?
@@ -134,8 +135,25 @@ Linters and analyzers need configuration and installed packages in each project.
 | Risk | Likely to cause problems; fragile or unsafe pattern | Recommend fixing or explicitly accepting |
 | Cleanup | Maintainability, clarity, dead code | Optional |
 | Nit | Style or preference | Optional; omit when there are many higher findings |
+| Auto-fix | Low-stakes fix that meets every auto-fix criterion | Applied by Claude without asking, then listed in the report. Never blocks and does not count as a warning |
 
 Deterministic failures (type errors, test failures, lint errors) are treated as Bug or Risk according to the tool's own severity.
+
+## Auto-fix
+
+A finding qualifies for auto-fix only when the fix meets **all** of these criteria. If any one is in doubt, it is reported at its normal level (usually Cleanup or Nit) instead.
+
+1. **No behavior change.** It does not change what code does at runtime, test logic or assertions, configuration, dependencies, generated files, public APIs or data formats.
+2. **Unambiguous.** The intended result is clear from the finding alone. Wording may vary, but the meaning does not, and the fix needs no decision about intent or design.
+3. **Within the change under review.** It touches only the commits or changed lines in scope, never surrounding code.
+4. **Not security-relevant.** Nothing involving secrets, permissions, authentication or input validation, however small.
+5. **Confident.** A deterministic check, or a reviewer finding with high confidence that Claude has confirmed by reading the cited location.
+
+Examples that qualify: commit subjects over 72 characters or ending in a period; a typo in a comment or documentation; trailing whitespace on changed lines. Examples that do not: renaming a variable, removing an unused import (it can have side effects), fixing a broken link whose correct target must be guessed.
+
+**Surfacing.** Every auto-fix appears in the review report's **Auto-fixed** section, with the location, what changed (before and after) and which check or reviewer found it. The PR description's Changes section lists them as well. File edits are left uncommitted in the working tree for the engineer to review; commit messages are reworded in place by `scripts/reword.mjs`, which checks each new message with the project's commit-msg hook (other commit hooks are skipped, since no files change), keeps the merge-base and merge commits, verifies the tree is unchanged, and leaves the branch untouched on any failure.
+
+**Sources.** Deterministic checks mark findings with severity `autofix`. Agent reviewers may label a finding `Auto-fix`; Claude verifies it against the criteria above before applying it and downgrades it to its normal level if it fails any.
 
 ## Known gaps
 
@@ -160,6 +178,7 @@ hypear-baseline/
 │   ├── review.mjs          # entry point: scope, checks, report
 │   ├── changelog.mjs       # changelog helper (changelog skill)
 │   ├── release.mjs         # release helper (release skill)
+│   ├── reword.mjs          # commit message auto-fixes (code-review skill)
 │   ├── lib/                # git scope, project commands, changelog, versions, release, process helpers
 │   ├── checks/             # agnostic, electron, portability, shell, commits
 │   └── test/               # node --test suite
