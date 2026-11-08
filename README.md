@@ -17,7 +17,7 @@ Personal Claude Code defaults: voice, coding standards, problem-solving approach
 | `commands/` | `/review`, `/pr`, `/review-setup` |
 | `scripts/review.mjs` | Deterministic review engine (Node, no dependencies) |
 | `scripts/changelog.mjs` | Changelog `init`, `add`, `lint`, `status`, `notes` |
-| `scripts/release.mjs` | Release `plan`, `run`, `publish` (needs the GitHub CLI, `gh`) |
+| `scripts/release.mjs` | Release `plan`, `prepare`, `run`, `publish` (needs the GitHub CLI, `gh`) |
 | `scripts/reword.mjs` | Rewords commit messages for review auto-fixes, without an interactive editor |
 | `configs/typescript/` | Baseline ESLint, knip and dependency-cruiser configs |
 | `docs/review-design.md` | Review system design and tenets |
@@ -45,7 +45,7 @@ Exit codes: `0` pass, `1` blocking failures, `2` could not run.
 
 ## Versioning and releases
 
-Rules: `standards/versioning.md`. Before 1.0 every release is `0.MINOR.PATCH-pre`, starting at `0.1.0-pre`; breaking, `Removed`, `Added` and `Deprecated` entries bump MINOR and everything else bumps PATCH, and after 1.0 SemVer bumps follow the changelog entry types. Releases are cut from `main` with `node scripts/release.mjs plan`, then `run --version <version>` (see `skills/release/SKILL.md`).
+Rules: `standards/versioning.md`. Before 1.0 every release is `0.MINOR.PATCH-pre`, starting at `0.1.0-pre`; breaking, `Removed`, `Added` and `Deprecated` entries bump MINOR and everything else bumps PATCH, and after 1.0 SemVer bumps follow the changelog entry types. Releases are cut from `main` with `node scripts/release.mjs plan`, then `run --version <version>`. After a PR merge, `prepare` moves a fully merged branch onto an up-to-date `main` (see `skills/release/SKILL.md`).
 
 ## Install
 

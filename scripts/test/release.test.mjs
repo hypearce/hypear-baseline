@@ -231,6 +231,9 @@ function releaseRepo(t) {
 const args = process.argv.slice(2)
 appendFileSync(${JSON.stringify(ghLog)}, JSON.stringify(args) + '\\n')
 if (args[0] === 'release' && args[1] === 'view') process.exit(1)
+if (args[0] === 'api' && process.env.FAKE_GH_API_FAIL) { console.error('HTTP 403: Resource not accessible'); process.exit(1) }
+if (args[0] === 'api' && args[1].includes('/rules/branches/')) { console.log(process.env.FAKE_GH_RULES || '[]'); process.exit(0) }
+if (args[0] === 'api' && args[1].includes('/rulesets/')) { console.log(process.env.FAKE_GH_RULESET || '{}'); process.exit(0) }
 if (args[0] === 'release' && args[1] === 'create' && process.env.FAKE_GH_FAIL_CREATE) { console.error('HTTP 502'); process.exit(1) }
 if (args[0] === 'release' && args[1] === 'create') console.log('https://github.com/o/r/releases/tag/' + args[2])
 `)
@@ -328,4 +331,168 @@ test('release run: a failed write restores the changelog and declarations', t =>
   assert.equal(readFileSync(join(dir, 'CHANGELOG.md'), 'utf8'), edited)
   assert.equal(readFileSync(plugin, 'utf8'), original)
   assert.equal(sh(dir, 'log', '-1', '--format=%s').trim(), 'init')
+})
+
+// Another clone merges `feature` (pushed by the work repo) into main with a
+// merge commit, plus one more commit, as a merged PR on GitHub would.
+// With `addFile`, the extra commit adds that file instead of being empty.
+function mergeOnOrigin(base, bare, sh, addFile) {
+  const other = join(base, 'other')
+  sh(base, 'clone', '-q', bare, other)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'test']]) sh(other, 'config', k, v)
+  sh(other, 'merge', '-q', '--no-ff', '-m', 'Merge feature', 'origin/feature')
+  if (addFile) { writeFileSync(join(other, addFile), 'from origin\n'); sh(other, 'add', addFile) }
+  sh(other, 'commit', '-q', '--allow-empty', '-m', 'another merged PR')
+  sh(other, 'push', '-q', 'origin', 'main')
+}
+
+test('release prepare: switches a merged branch to main and fast-forwards it', t => {
+  const { dir, base, bare, sh, release } = releaseRepo(t)
+  sh(dir, 'switch', '-qc', 'feature')
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'feature work')
+  sh(dir, 'push', '-q', 'origin', 'feature')
+  mergeOnOrigin(base, bare, sh)
+
+  const plan = release('plan')
+  assert.equal(plan.code, 1)
+  assert.equal(plan.out.prepare, 'available')
+  assert.ok(plan.out.checks.some(c => c.name === 'on main' && !c.ok))
+
+  const prep = release('prepare')
+  assert.equal(prep.code, 0, JSON.stringify(prep.out))
+  assert.equal(sh(dir, 'branch', '--show-current').trim(), 'main')
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), sh(bare, 'rev-parse', 'main').trim())
+  assert.match(prep.out.message, /feature is fully merged and was kept/)
+
+  const after = release('plan')
+  assert.equal(after.code, 0, JSON.stringify(after.out.checks))
+  assert.equal(after.out.prepare, 'not needed')
+  assert.equal(release('prepare').out.changed, false)
+})
+
+test('release prepare: refuses unmerged commits, local changes and a diverged main', t => {
+  const { dir, base, bare, sh, write, release } = releaseRepo(t)
+  sh(dir, 'switch', '-qc', 'feature')
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'feature work')
+  sh(dir, 'push', '-q', 'origin', 'feature')
+  mergeOnOrigin(base, bare, sh)
+
+  const refused = (pattern) => {
+    const before = sh(dir, 'rev-parse', 'HEAD').trim()
+    const r = release('prepare')
+    assert.equal(r.code, 1, JSON.stringify(r.out))
+    assert.match(r.out.message, pattern)
+    assert.equal(sh(dir, 'branch', '--show-current').trim(), 'feature')
+    assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), before)
+    assert.equal(release('plan').out.prepare, 'blocked')
+  }
+
+  write('src.txt', 'changed\n')
+  refused(/uncommitted changes: src\.txt/)
+  sh(dir, 'checkout', '-q', '--', 'src.txt')
+
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'unpushed work')
+  refused(/feature has commits that are not in origin\/main/)
+  sh(dir, 'reset', '-q', '--hard', 'HEAD~1')
+
+  sh(dir, 'switch', '-q', 'main')
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'local only')
+  sh(dir, 'switch', '-q', 'feature')
+  refused(/local main has commits that are not in origin\/main/)
+  sh(dir, 'branch', '-f', 'main', 'origin/main~2')
+
+  sh(dir, 'worktree', 'add', '-q', join(base, 'wt'), 'main')
+  refused(/main is checked out in another worktree/)
+})
+
+test('release prepare: without a local main, on main behind origin, and from a detached HEAD', t => {
+  const { dir, base, bare, sh, release } = releaseRepo(t)
+  sh(dir, 'switch', '-qc', 'feature')
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'feature work')
+  sh(dir, 'push', '-q', 'origin', 'feature')
+  mergeOnOrigin(base, bare, sh)
+  const originMain = sh(bare, 'rev-parse', 'main').trim()
+
+  sh(dir, 'branch', '-D', 'main')
+  assert.equal(release('prepare').code, 0)
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), originMain)
+  assert.equal(sh(dir, 'rev-parse', '--abbrev-ref', 'main@{upstream}').trim(), 'origin/main')
+
+  sh(dir, 'reset', '-q', '--hard', 'HEAD~2')
+  const behind = release('prepare')
+  assert.equal(behind.code, 0, JSON.stringify(behind.out))
+  assert.match(behind.out.message, /^Fast-forwarded main/)
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), originMain)
+
+  sh(dir, 'reset', '-q', '--hard', 'HEAD~2')
+  sh(dir, 'switch', '-q', '--detach', 'feature')
+  const detached = release('prepare')
+  assert.equal(detached.code, 0, JSON.stringify(detached.out))
+  assert.match(detached.out.message, /from detached HEAD/)
+  assert.equal(sh(dir, 'branch', '--show-current').trim(), 'main')
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), originMain)
+})
+
+test('release prepare: a failed switch puts local main back and changes nothing', t => {
+  const { dir, base, bare, sh, write, release } = releaseRepo(t)
+  sh(dir, 'switch', '-qc', 'feature')
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'feature work')
+  sh(dir, 'push', '-q', 'origin', 'feature')
+  mergeOnOrigin(base, bare, sh, 'new.txt')
+  // An untracked file that main now tracks makes git refuse the switch.
+  write('new.txt', 'local\n')
+  const mainBefore = sh(dir, 'rev-parse', 'main').trim()
+
+  const r = release('prepare')
+  assert.equal(r.code, 1, JSON.stringify(r.out))
+  assert.equal(r.out.error, 'switch failed')
+  assert.match(r.out.message, /Nothing was changed/)
+  assert.equal(sh(dir, 'branch', '--show-current').trim(), 'feature')
+  assert.equal(sh(dir, 'rev-parse', 'main').trim(), mainBefore)
+  assert.equal(readFileSync(join(dir, 'new.txt'), 'utf8'), 'local\n')
+})
+
+test('release plan: a ruleset on main that the user cannot bypass blocks the release', t => {
+  const { dir, sh, release, env } = releaseRepo(t)
+  env.FAKE_GH_RULES = JSON.stringify([
+    { type: 'deletion', ruleset_id: 7 }, { type: 'pull_request', ruleset_id: 7 }, { type: 'non_fast_forward', ruleset_id: 7 },
+  ])
+  env.FAKE_GH_RULESET = JSON.stringify({ id: 7, name: 'Protect main', current_user_can_bypass: 'pull_requests_only' })
+  const name = 'rulesets allow a direct push to main'
+  const blocked = release('run', '--version', '0.1.0-pre')
+  assert.equal(blocked.code, 1)
+  assert.match(blocked.out.checks.find(c => c.name === name).detail, /ruleset "Protect main" requires pull_request\. Add yourself/)
+  assert.equal(sh(dir, 'log', '-1', '--format=%s').trim(), 'init')
+
+  env.FAKE_GH_RULESET = JSON.stringify({ id: 7, name: 'Protect main', current_user_can_bypass: 'always' })
+  assert.ok(release('plan').out.checks.find(c => c.name === name).ok)
+})
+
+test('release plan: ruleset responses that cannot be read, signatures and exempt bypass', t => {
+  const { dir, sh, release, env } = releaseRepo(t)
+  const name = 'rulesets allow a direct push to main'
+  const check = () => release('plan').out.checks.find(c => c.name === name)
+
+  env.FAKE_GH_API_FAIL = '1'
+  const failed = release('plan')
+  assert.equal(failed.code, 0, JSON.stringify(failed.out.checks))
+  assert.equal(failed.out.checks.find(c => c.name === name), undefined)
+  assert.match(failed.out.warnings[0], /could not read the rules for main \(HTTP 403/)
+  delete env.FAKE_GH_API_FAIL
+
+  env.FAKE_GH_RULES = '{"message":"Not Found"}'
+  assert.match(release('plan').out.warnings[0], /unexpected response/)
+
+  env.FAKE_GH_RULES = JSON.stringify([null, { type: 'required_status_checks', ruleset_id: 3 }])
+  env.FAKE_GH_RULESET = 'not json'
+  assert.match(check().detail, /ruleset 3 requires required_status_checks, and its bypass list could not be read/)
+
+  env.FAKE_GH_RULESET = JSON.stringify({ id: 3, name: 'Checks', current_user_can_bypass: 'exempt' })
+  assert.ok(check().ok)
+
+  env.FAKE_GH_RULES = JSON.stringify([{ type: 'required_signatures', ruleset_id: 4 }])
+  env.FAKE_GH_RULESET = JSON.stringify({ id: 4, name: 'Signed', current_user_can_bypass: 'never' })
+  assert.match(check().detail, /ruleset "Signed" requires required_signatures/)
+  sh(dir, 'config', 'commit.gpgsign', 'true')
+  assert.ok(check().ok)
 })

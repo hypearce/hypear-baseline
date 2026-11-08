@@ -2,6 +2,7 @@
 // Release helper: cuts a release from main (standards/versioning.md).
 //
 //   node release.mjs plan [--version X]            checks and plan; changes nothing
+//   node release.mjs prepare                       switch to main and fast-forward, only when no work is at risk
 //   node release.mjs run --version X [--co-author "Name <email>"]
 //        release commit (CHANGELOG.md + version declarations), push to main, GitHub release
 //   node release.mjs publish --version X           GitHub release only, for a release commit already pushed
@@ -12,7 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { git } from './lib/proc.mjs'
 import {
-  RELEASE_BRANCH, applyRelease, localDate, preflight, publishRelease, releaseFiles, repoRoot, tagFor,
+  RELEASE_BRANCH, applyRelease, localDate, preflight, prepareRelease, publishRelease, releaseFiles, repoRoot, tagFor,
 } from './lib/release.mjs'
 
 const argv = process.argv.slice(2)
@@ -37,12 +38,17 @@ function finish(code, data) {
 
 const root = repoRoot(process.cwd())
 if (!root) { say('Not inside a git repository.'); finish(2, { ok: false, error: 'not a git repository' }) }
-if (!['plan', 'run', 'publish'].includes(command)) { say('usage: release.mjs <plan|run|publish> [--version X] [--co-author "Name <email>"] [--json]'); finish(2, { ok: false, error: 'usage' }) }
+if (!['plan', 'prepare', 'run', 'publish'].includes(command)) { say('usage: release.mjs <plan|prepare|run|publish> [--version X] [--co-author "Name <email>"] [--json]'); finish(2, { ok: false, error: 'usage' }) }
+if (command === 'prepare') {
+  const r = prepareRelease(root)
+  say(r.message)
+  finish(r.ok ? 0 : 1, r)
+}
 if (command !== 'plan' && !requested) { say(`${command} requires --version (use the version from "plan").`); finish(2, { ok: false, error: 'missing --version' }) }
 
 const pf = preflight(root, { mode: command === 'publish' ? 'publish' : 'release', version: requested })
 const checkLines = pf.checks.map(c => `- [${c.ok ? 'x' : ' '}] ${c.name}${!c.ok && c.detail ? `: ${c.detail}` : ''}`)
-const summary = { ok: pf.ok, version: pf.version, repo: pf.repo, checks: pf.checks }
+const summary = { ok: pf.ok, version: pf.version, repo: pf.repo, checks: pf.checks, warnings: pf.warnings }
 
 if (command === 'plan') {
   const date = localDate()
@@ -60,12 +66,19 @@ if (command === 'plan') {
   say(`- Commit: "Release ${pf.version ? tagFor(pf.version) : '?'}", changing ${files.join(', ') || 'nothing'}`)
   say(`- Push: ${RELEASE_BRANCH} to origin`)
   say(`- GitHub release: ${pf.version ? tagFor(pf.version) : '?'}${pf.version?.includes('-') ? ', marked as pre-release' : ''}`)
+  if (pf.sync.needed) {
+    say(pf.sync.safe
+      ? `- Prepare: available. "release.mjs prepare" switches to ${RELEASE_BRANCH} and fast-forwards it; then plan again, because the version and notes above come from the current branch.`
+      : `- Prepare: not available (${pf.sync.problems.join('; ')}).`)
+  }
   say('')
   say('## Checks')
   say('')
   lines.push(...checkLines)
+  if (pf.warnings.length) { say(''); say('## Warnings'); say(''); lines.push(...pf.warnings.map(w => `- ${w}`)) }
   if (notes) { say(''); say('## Release notes'); say(''); say(notes) }
-  finish(pf.ok ? 0 : 1, { ...summary, date, files, notes })
+  const prepare = !pf.sync.needed ? 'not needed' : pf.sync.safe ? 'available' : 'blocked'
+  finish(pf.ok ? 0 : 1, { ...summary, date, files, notes, prepare })
 }
 
 if (!pf.ok) {

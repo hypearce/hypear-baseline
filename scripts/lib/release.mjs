@@ -61,6 +61,129 @@ export function gh(root, args) {
   return run(override || 'gh', args, { cwd: root })
 }
 
+/** True if commit `a` is reachable from `b`; null if git could not tell. */
+function isAncestor(root, a, b) {
+  const r = git(root, 'merge-base', '--is-ancestor', a, b)
+  return r.code === 0 ? true : r.code === 1 ? false : null
+}
+
+const REMOTE_REF = `refs/remotes/origin/${RELEASE_BRANCH}`
+const LOCAL_REF = `refs/heads/${RELEASE_BRANCH}`
+
+/**
+ * Whether the repository can be moved onto an up-to-date main without losing
+ * or carrying over work: no uncommitted changes to tracked files, HEAD fully
+ * merged into origin/main, and local main (if any) a fast-forward of it and
+ * not checked out in another worktree. Squash and rebase merges leave HEAD
+ * unmerged by this test, so they are not treated as safe. Untracked files
+ * are not checked; git refuses the switch if one would be overwritten.
+ * Reads refs only; call after fetching origin/main.
+ */
+export function syncState(root) {
+  const branch = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD').out.trim()
+  const head = git(root, 'rev-parse', 'HEAD').out.trim()
+  const remote = git(root, 'rev-parse', '--verify', '--quiet', REMOTE_REF).out.trim()
+  if (!remote) return { needed: true, safe: false, branch, problems: [`origin/${RELEASE_BRANCH} not found`] }
+  if (branch === RELEASE_BRANCH && head === remote) return { needed: false, safe: true, branch, problems: [] }
+
+  const problems = []
+  const unmerged = (ref, label) => {
+    const merged = isAncestor(root, ref, REMOTE_REF)
+    if (merged === null) problems.push(`could not compare ${label} with origin/${RELEASE_BRANCH}`)
+    else if (!merged) problems.push(`${label} has commits that are not in origin/${RELEASE_BRANCH}`)
+  }
+  const dirty = git(root, 'status', '--porcelain', '--untracked-files=no').out.split('\n').filter(Boolean)
+  if (dirty.length) problems.push(`uncommitted changes: ${dirty.slice(0, 5).map(l => l.slice(3)).join(', ')}`)
+  unmerged('HEAD', branch || 'detached HEAD')
+  const mainSha = git(root, 'rev-parse', '--verify', '--quiet', LOCAL_REF).out.trim()
+  if (mainSha && branch !== RELEASE_BRANCH) {
+    unmerged(LOCAL_REF, `local ${RELEASE_BRANCH}`)
+    // HEAD is not on main here, so any worktree on main is another one.
+    const worktrees = git(root, 'worktree', 'list', '--porcelain').out.split('\n')
+    if (worktrees.includes(`branch ${LOCAL_REF}`)) problems.push(`${RELEASE_BRANCH} is checked out in another worktree`)
+  }
+  return { needed: true, safe: !problems.length, branch, mainSha, problems }
+}
+
+/**
+ * Moves the repository onto main at origin/main, only in the state syncState
+ * calls safe. Fetches first. All or nothing: off main, it fast-forwards the
+ * main ref, then switches in one step, and puts the ref back if the switch
+ * fails. Returns { ok, changed, message, error? }.
+ */
+export function prepareRelease(root) {
+  const fail = (message, error) => ({ ok: false, changed: false, message, error })
+  const fetched = git(root, 'fetch', '--quiet', 'origin', RELEASE_BRANCH)
+  if (fetched.code !== 0) return fail(`Fetch failed: ${fetched.err.trim()}`, 'fetch failed')
+  const sync = syncState(root)
+  if (!sync.needed) return { ok: true, changed: false, message: `Already on ${RELEASE_BRANCH} and in sync with origin/${RELEASE_BRANCH}.` }
+  if (!sync.safe) return fail(`Not switching: ${sync.problems.join('; ')}. Nothing was changed.`, 'not safe')
+  const remote = git(root, 'rev-parse', REMOTE_REF).out.trim()
+
+  if (sync.branch === RELEASE_BRANCH) {
+    const ff = git(root, 'merge', '--ff-only', '--quiet', REMOTE_REF)
+    if (ff.code !== 0) return fail(`Fast-forward failed: ${ff.err.trim()}. Nothing was changed.`, 'fast-forward failed')
+    return { ok: true, changed: true, message: `Fast-forwarded ${RELEASE_BRANCH} to origin/${RELEASE_BRANCH} (${remote.slice(0, 7)}).` }
+  }
+
+  const moved = sync.mainSha
+    ? git(root, 'update-ref', '-m', 'release.mjs prepare: fast-forward', LOCAL_REF, remote, sync.mainSha)
+    : git(root, 'branch', '--quiet', '--track', RELEASE_BRANCH, REMOTE_REF)
+  if (moved.code !== 0) return fail(`Could not update ${RELEASE_BRANCH}: ${moved.err.trim()}. Nothing was changed.`, 'update failed')
+  const sw = git(root, 'switch', '--quiet', RELEASE_BRANCH)
+  if (sw.code !== 0) {
+    const undo = sync.mainSha
+      ? git(root, 'update-ref', LOCAL_REF, sync.mainSha, remote)
+      : git(root, 'branch', '--quiet', '-D', RELEASE_BRANCH)
+    const state = undo.code === 0 ? 'Nothing was changed.' : `Local ${RELEASE_BRANCH} was left at origin/${RELEASE_BRANCH}; no work was lost.`
+    return fail(`git switch failed: ${sw.err.trim()}. ${state}`, 'switch failed')
+  }
+  const from = sync.branch ? `branch ${sync.branch}` : 'detached HEAD'
+  const kept = sync.branch ? ` ${sync.branch} is fully merged and was kept.` : ''
+  return { ok: true, changed: true, message: `Switched from ${from} to ${RELEASE_BRANCH} at origin/${RELEASE_BRANCH} (${remote.slice(0, 7)}).${kept}` }
+}
+
+// Ruleset rule types that reject a direct push of the release commit. Rules on
+// commit message or author patterns are not evaluated.
+const PUSH_BLOCKING_RULES = new Set(['pull_request', 'required_status_checks', 'required_deployments', 'merge_queue', 'update'])
+
+/**
+ * Rulesets on main that would reject the direct push of the release commit
+ * for the signed-in user (GitHub error GH013). Classic branch protection is
+ * not checked. Returns { ok, detail } or, when the rules cannot be read at
+ * all, { ok: true, warning }, so an unavailable API does not block releases.
+ */
+export function pushRuleBlockers(root, repo) {
+  const rules = gh(root, ['api', `repos/${repo}/rules/branches/${RELEASE_BRANCH}?per_page=100`])
+  let list = null
+  if (rules.code === 0) { try { list = JSON.parse(rules.out) } catch { list = null } }
+  if (!Array.isArray(list)) {
+    const why = rules.code !== 0 ? rules.err.trim().split('\n')[0] : 'unexpected response'
+    return { ok: true, detail: '', warning: `could not read the rules for ${RELEASE_BRANCH} (${why}); a ruleset may still reject the release push` }
+  }
+  const signs = git(root, 'config', '--bool', 'commit.gpgsign').out.trim() === 'true'
+  const byRuleset = new Map()
+  for (const rule of list) {
+    if (typeof rule?.type !== 'string' || rule.ruleset_id == null) continue
+    if (!PUSH_BLOCKING_RULES.has(rule.type) && !(rule.type === 'required_signatures' && !signs)) continue
+    byRuleset.set(rule.ruleset_id, [...(byRuleset.get(rule.ruleset_id) ?? []), rule.type])
+  }
+  const blockers = []
+  const unreadable = []
+  for (const [id, types] of byRuleset) {
+    const r = gh(root, ['api', `repos/${repo}/rulesets/${id}`])
+    let ruleset = null
+    if (r.code === 0) { try { ruleset = JSON.parse(r.out) } catch { ruleset = null } }
+    if (!ruleset || typeof ruleset !== 'object') { unreadable.push(`ruleset ${id} requires ${types.join(', ')}, and its bypass list could not be read`); continue }
+    if (['always', 'exempt'].includes(ruleset.current_user_can_bypass)) continue
+    blockers.push(`ruleset "${ruleset.name ?? id}" requires ${types.join(', ')}`)
+  }
+  const parts = []
+  if (blockers.length) parts.push(`${blockers.join('; ')}. Add yourself (or a role you hold, such as Repository admin) to its bypass list with "Always allow"`)
+  if (unreadable.length) parts.push(unreadable.join('; '))
+  return { ok: !parts.length, detail: parts.join('. ') }
+}
+
 /**
  * Checks that a release can proceed. mode "release": cut `version` (default:
  * the computed next version) from Unreleased. mode "publish": create the
@@ -86,12 +209,19 @@ export function preflight(root, { mode = 'release', version } = {}) {
   const fetched = git(root, 'fetch', '--quiet', 'origin', RELEASE_BRANCH)
   const head = git(root, 'rev-parse', 'HEAD').out.trim()
   const remote = git(root, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${RELEASE_BRANCH}`).out.trim()
+  const sync = fetched.code === 0 ? syncState(root) : { needed: true, safe: false, problems: ['fetch failed'] }
   check(`in sync with origin/${RELEASE_BRANCH}`, fetched.code === 0 && head && head === remote,
-    fetched.code !== 0 ? `fetch failed: ${fetched.err.trim()}` : `HEAD ${head.slice(0, 7)} differs from origin/${RELEASE_BRANCH} ${remote.slice(0, 7) || '(missing)'}; pull or push first`)
+    fetched.code !== 0 ? `fetch failed: ${fetched.err.trim()}` : `HEAD ${head.slice(0, 7)} differs from origin/${RELEASE_BRANCH} ${remote.slice(0, 7) || '(missing)'}; ${sync.safe ? 'run "release.mjs prepare"' : 'pull or push first'}`)
 
+  const warnings = []
   const auth = gh(root, ['auth', 'status', '--hostname', 'github.com'])
   const ghOk = check('GitHub CLI installed and signed in', auth.code === 0,
     /ENOENT|not recognized|not found/.test(auth.err) ? 'gh not found; install it (winget install GitHub.cli) and run gh auth login' : auth.err.trim().split('\n')[0])
+  if (ghOk && repo && mode === 'release') {
+    const rules = pushRuleBlockers(root, repo)
+    if (rules.warning) warnings.push(rules.warning)
+    else check(`rulesets allow a direct push to ${RELEASE_BRANCH}`, rules.ok, rules.detail)
+  }
 
   let target = version ?? null
   if (state.exists && mode === 'release') {
@@ -120,7 +250,7 @@ export function preflight(root, { mode = 'release', version } = {}) {
     if (ghOk && repo) check(`no GitHub release ${tag}`, gh(root, ['release', 'view', tag, '--repo', repo]).code !== 0, 'already exists')
   }
 
-  return { ok: checks.every(c => c.ok), checks, state, version: target, repo, head }
+  return { ok: checks.every(c => c.ok), checks, warnings, state, version: target, repo, head, sync }
 }
 
 /** Files the release commit may change: the changelog and the version declarations. */
