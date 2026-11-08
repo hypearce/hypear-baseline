@@ -18,20 +18,24 @@ Run only when the user asks for a release. If the project's instructions or your
 
 ```
 node "<plugin root>/scripts/release.mjs" plan [--version X]
+node "<plugin root>/scripts/release.mjs" prepare
 node "<plugin root>/scripts/release.mjs" run --version X --co-author "<attribution>"
 node "<plugin root>/scripts/release.mjs" publish --version X
 ```
 
-- `plan` checks and prints the plan; it changes nothing. Without `--version` it computes the next version.
+- `plan` checks and prints the plan; it changes nothing. Without `--version` it computes the next version. When the branch or sync checks fail, it says whether `prepare` is available.
+- `prepare` switches to `main` at `origin/main`, only when no work is at risk: no uncommitted changes to tracked files, the current branch fully merged into `origin/main`, and local `main` a fast-forward that is not checked out in another worktree. Otherwise it refuses and changes nothing. Squash or rebase merges count as unmerged, so they are refused too. It is all or nothing: if git refuses the switch (for example, an untracked file `main` now tracks), local `main` is put back. Untracked files are left in place, and the merged branch is kept.
 - `run` re-checks, then writes the changelog and version declarations, commits `Release vX` (the subject the commit standard prescribes for releases), pushes `main` and creates the GitHub release. If anything fails before the commit, it restores the files.
 - `publish` creates only the GitHub release, for a release commit already on `origin/main` (recovery after a failed `run`).
 - Exit codes: `0` ok, `1` checks or a step failed, `2` usage error or not a git repository. Add `--json` for structured output.
 
-The checks: on `main`; no uncommitted changes except to `CHANGELOG.md`; `HEAD` equal to `origin/main` after a fetch; origin on GitHub; `gh` installed and signed in; changelog committed and lint-clean; `Unreleased` not empty; version allowed by the rules; version declarations equal to the last release; tag and GitHub release not already present.
+Rules that cannot be read (for example, a token without access) are a warning in the plan, not a failed check; mention the warning in the confirmation.
+
+The checks: on `main`; no uncommitted changes except to `CHANGELOG.md`; `HEAD` equal to `origin/main` after a fetch; origin on GitHub; `gh` installed and signed in; no ruleset on `main` that would reject the direct push for the signed-in user (classic branch protection is not checked); changelog committed and lint-clean; `Unreleased` not empty; version allowed by the rules; version declarations equal to the last release; tag and GitHub release not already present.
 
 ## Procedure
 
-1. **Plan.** Run `plan`. If it is blocked, report the failed checks and stop. Do not work around a check: switching branches, pulling, stashing or committing other work are the user's calls. If `gh` is missing: `winget install GitHub.cli`, then `gh auth login`.
+1. **Plan.** Run `plan`. If it reports `Prepare: available`, run `prepare` without asking, say in one line what it did, and run `plan` again; the first plan's version and notes came from the old branch, so do not use them. Run `prepare` at most once per release; if it fails, report its message and stop. If the plan is still blocked, report the failed checks and stop. Do not work around a check: switching branches (other than through `prepare`), pulling, stashing or committing other work are the user's calls. If `gh` is missing: `winget install GitHub.cli`, then `gh auth login`. If a ruleset blocks the push, report it; changing the bypass list is the user's call.
 2. **Check the entries.** Compare `Unreleased` with what changed since the last release: `git log --oneline v<last>..HEAD` (the whole history for a first release). Add missing user-visible changes, merge duplicates, fix types, and make sure breaking changes carry `**Breaking:**`. Use the changelog skill's rules. Leave these edits uncommitted; the release commit includes them. Rerun `plan` if you changed anything, because the type of an entry can change the version.
 3. **Confirm.** Show the user the version and reason, the release notes, and what will happen: one commit pushed directly to `main`, and a GitHub release (marked pre-release before 1.0). Wait for an explicit yes. For `1.0.0` itself, also confirm that they are declaring the project stable. The confirmation authorizes the direct push to `main`; the pre-push skill's checks do not apply to the release commit, because `plan` already required `main` to be pushed.
 4. **Run.** `run --version <confirmed version> --co-author "<the Co-Authored-By value from your commit attribution instructions>"`. Pass the version from the plan, so a change between plan and run is refused rather than released.

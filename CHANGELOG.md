@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - GitHub issue standard (`standards/issues.md`), loaded every session: when to create an issue, title rules, one body format (Problem, Proposal, Acceptance, Depends on), labels, and `#N` linking. The voice standard now covers issue text. (#3)
+- `release.mjs prepare`: after a PR is merged, switches to `main` and fast-forwards it when the current branch is fully merged, the working tree is clean and local `main` fast-forwards; it refuses anything else. `plan` says when it is available, and the release skill runs it without asking, so a release no longer stops after a PR merged with a merge commit. Squash and rebase merges still stop for the user. (#2)
+- `release.mjs plan` checks that no ruleset on `main` would reject the direct push of the release commit (GitHub error GH013), and names the ruleset to add yourself to as a bypass actor. If the rules cannot be read, the plan shows a warning instead. (#2)
 
 ## [1.0.0-pre.3] - 2026-11-08
 
