@@ -151,7 +151,7 @@ A finding qualifies for auto-fix only when the fix meets **all** of these criter
 
 Examples that qualify: commit subjects over 72 characters or ending in a period; a typo in a comment or documentation; trailing whitespace on changed lines. Examples that do not: renaming a variable, removing an unused import (it can have side effects), fixing a broken link whose correct target must be guessed.
 
-**Surfacing.** Every auto-fix appears in the review report's **Auto-fixed** section, with the location, what changed (before and after) and which check or reviewer found it. The PR description's Review section lists them as well. File edits are left uncommitted in the working tree for the engineer to review; commit messages are reworded in place by `scripts/reword.mjs`, which keeps the merge-base and merge commits, verifies the tree is unchanged, and leaves the branch untouched on any failure.
+**Surfacing.** Every auto-fix appears in the review report's **Auto-fixed** section, with the location, what changed (before and after) and which check or reviewer found it. The PR description's Review section lists them as well. File edits are left uncommitted in the working tree for the engineer to review; commit messages are reworded in place by `scripts/reword.mjs`, which checks each new message with the project's commit-msg hook (other commit hooks are skipped, since no files change), keeps the merge-base and merge commits, verifies the tree is unchanged, and leaves the branch untouched on any failure.
 
 **Sources.** Deterministic checks mark findings with severity `autofix`. Agent reviewers may label a finding `Auto-fix`; Claude verifies it against the criteria above before applying it and downgrades it to its normal level if it fails any.
 

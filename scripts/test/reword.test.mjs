@@ -114,15 +114,78 @@ test('refuses merge commits and commits outside the branch, changing nothing', t
   assert.equal(sh('rev-parse', 'HEAD'), head)
 })
 
-test('a failing commit hook aborts the rebase and leaves the branch unchanged', t => {
+function hook(dir, write, name, body) {
+  write(`.git/hooks/${name}`, `#!/bin/sh\n${body}\n`)
+  chmodSync(join(dir, '.git/hooks', name), 0o755)
+}
+
+test('a rejecting commit-msg hook stops the reword before anything changes', t => {
   const { dir, sh, write, message } = makeRepo(t)
-  write('.git/hooks/commit-msg', '#!/bin/sh\nexit 1\n')
-  chmodSync(join(dir, '.git/hooks/commit-msg'), 0o755)
+  hook(dir, write, 'commit-msg', 'echo "bad message" >&2; exit 1')
+  const head = sh('rev-parse', 'HEAD')
+  const { code, result } = reword(dir, '--base', 'main', `${sh('rev-parse', '--short', 'HEAD~1')}=${message('b.txt', 'Add b\n')}`)
+  assert.equal(code, 1)
+  assert.match(result.error, /commit-msg hook rejected[\s\S]*bad message/)
+  assert.equal(sh('rev-parse', 'HEAD'), head)
+})
+
+test('a failing pre-commit hook does not block a message-only reword', t => {
+  const { dir, sh, write, message } = makeRepo(t)
+  hook(dir, write, 'pre-commit', 'exit 1')
+  const { code, result } = reword(dir, '--base', 'main', `${sh('rev-parse', '--short', 'HEAD~1')}=${message('b.txt', 'Add b\n')}`)
+  assert.equal(code, 0, result?.error)
+  assert.deepEqual(log(sh), ['Add c', 'Add b'])
+})
+
+test('a failed verification resets the branch and keeps uncommitted changes', t => {
+  const { dir, sh, write, message } = makeRepo(t)
+  // prepare-commit-msg still runs under --no-verify; rewriting the message makes the subjects mismatch.
+  hook(dir, write, 'prepare-commit-msg', 'echo "Something else" > "$1"')
   write('c.txt', 'uncommitted\n')
   const head = sh('rev-parse', 'HEAD')
   const { code, result } = reword(dir, '--base', 'main', `${sh('rev-parse', '--short', 'HEAD~1')}=${message('b.txt', 'Add b\n')}`)
   assert.equal(code, 1)
-  assert.match(result.error, /aborted/)
+  assert.match(result.error, /subjects do not match[\s\S]*reset/)
   assert.equal(sh('rev-parse', 'HEAD'), head)
   assert.equal(readFileSync(join(dir, 'c.txt'), 'utf8'), 'uncommitted\n')
+})
+
+test('overrides rebase.updateRefs and rebase.autoSquash', t => {
+  const { dir, sh, commit, message } = makeRepo(t)
+  commit('d.txt', 'fixup! Add b.')
+  sh('branch', 'other', 'HEAD~1')
+  sh('config', 'rebase.updateRefs', 'true')
+  sh('config', 'rebase.autoSquash', 'true')
+  const other = sh('rev-parse', 'other')
+  const { code, result } = reword(dir, '--base', 'main', `${sh('rev-parse', '--short', 'HEAD~1')}=${message('c.txt', 'Add c, reworded\n')}`)
+  assert.equal(code, 0, result?.error)
+  assert.equal(sh('rev-parse', 'other'), other)
+  assert.deepEqual(log(sh), ['fixup! Add b.', 'Add c, reworded', 'Add b.'])
+})
+
+test('reports commits on a remote-tracking branch as pushed without an upstream', t => {
+  const { dir, sh, message } = makeRepo(t)
+  sh('update-ref', 'refs/remotes/origin/feature', 'HEAD')
+  const { code, result } = reword(dir, '--base', 'main', `${sh('rev-parse', '--short', 'HEAD')}=${message('c.txt', 'Add c, reworded\n')}`)
+  assert.equal(code, 0, result?.error)
+  assert.equal(result.reworded[0].pushed, true)
+})
+
+test('rejects bad arguments and message files with a usage error', t => {
+  const { dir, sh, message } = makeRepo(t)
+  const hash = sh('rev-parse', '--short', 'HEAD')
+  const full = sh('rev-parse', 'HEAD')
+  const ok = message('ok.txt', 'Subject\n')
+  const cases = [
+    [['--base', 'main', `${hash}=${ok}`, `${full}=${ok}`], /already listed/],
+    [['--base', 'main', `${hash}=${ok}`, 'stray'], /Unexpected argument/],
+    [['--base', 'main', `${hash}=${message('two.txt', 'Subject\nNo blank line\n')}`], /blank line after the subject/],
+    [['--base', 'main', `${hash}=${dirname(ok)}`], /not found/],
+  ]
+  for (const [args, pattern] of cases) {
+    const { code, result } = reword(dir, ...args)
+    assert.equal(code, 2, args.join(' '))
+    assert.match(result.error, pattern)
+  }
+  assert.equal(sh('rev-parse', 'HEAD'), full)
 })

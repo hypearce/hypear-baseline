@@ -72,7 +72,7 @@ If the project documents its own commit convention (for example in `CONTRIBUTING
 node "<plugin root>/scripts/reword.mjs" --base <base ref> <hash>=<message file> [<hash>=<message file> ...] --json
 ```
 
-The script rewords in place on the existing merge-base, keeps merge commits, stashes and restores uncommitted changes, and verifies that the tree is unchanged and the subjects match. On any failure it leaves the branch as it was and exits non-zero; then report the finding at its normal level instead of fixing it. Its output marks each commit that was already pushed: say in the report that the next push replaces those remote commits with `--force-with-lease`, which the pre-push skill also reports before pushing.
+The script runs the project's commit-msg hook on each new message first (other commit hooks are skipped, since no files change), rewords in place on the existing merge-base, keeps merge commits, stashes and restores uncommitted changes, and verifies that the tree is unchanged and the subjects match. On any failure it leaves the branch as it was and exits non-zero; then report the finding at its normal level instead of fixing it. Its output marks each commit that was already pushed: say in the report that the next push replaces those remote commits with `--force-with-lease`, which the pre-push skill also reports before pushing.
 
 ## 5. Report format
 
